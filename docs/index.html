@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SkyClf - Real-time Sky Classification</title>
+    <meta
+      name="description"
+      content="Open-source sky classification system using machine learning to classify AllSky camera images in real-time."
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" href="SkyClfLogo.png" />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              sky: {
+                950: "#0a0f1a",
+                900: "#0c1222",
+                800: "#131b2e",
+                700: "#1a2540",
+                600: "#243354",
+              },
+              accent: {
+                blue: "#4a9eff",
+                purple: "#8b5cf6",
+                cyan: "#22d3ee",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap");
+
+      body {
+        font-family: "Inter", sans-serif;
+        background: linear-gradient(
+          180deg,
+          #0a0f1a 0%,
+          #131b2e 50%,
+          #1a2540 100%
+        );
+      }
+
+      code,
+      pre {
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .stars {
+        background-image: radial-gradient(
+            2px 2px at 20px 30px,
+            white,
+            transparent
+          ),
+          radial-gradient(
+            2px 2px at 40px 70px,
+            rgba(255, 255, 255, 0.8),
+            transparent
+          ),
+          radial-gradient(1px 1px at 90px 40px, white, transparent),
+          radial-gradient(
+            2px 2px at 160px 120px,
+            rgba(255, 255, 255, 0.6),
+            transparent
+          ),
+          radial-gradient(1px 1px at 230px 80px, white, transparent),
+          radial-gradient(
+            2px 2px at 300px 150px,
+            rgba(255, 255, 255, 0.7),
+            transparent
+          ),
+          radial-gradient(1px 1px at 350px 50px, white, transparent),
+          radial-gradient(
+            2px 2px at 420px 180px,
+            rgba(255, 255, 255, 0.5),
+            transparent
+          ),
+          radial-gradient(1px 1px at 500px 90px, white, transparent),
+          radial-gradient(
+            2px 2px at 580px 130px,
+            rgba(255, 255, 255, 0.8),
+            transparent
+          );
+        background-size: 600px 200px;
+        animation: twinkle 8s ease-in-out infinite;
+      }
+
+      @keyframes twinkle {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.7;
+        }
+      }
+
+      .glow {
+        box-shadow: 0 0 40px rgba(74, 158, 255, 0.3);
+      }
+
+      .card {
+        background: rgba(19, 27, 46, 0.8);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(74, 158, 255, 0.2);
+      }
+
+      .gradient-text {
+        background: linear-gradient(
+          135deg,
+          #4a9eff 0%,
+          #8b5cf6 50%,
+          #22d3ee 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen text-white">
+    <!-- Stars Background -->
+    <div class="fixed inset-0 stars pointer-events-none"></div>
+
+    <!-- Navigation -->
+    <nav class="relative z-10 container mx-auto px-6 py-6">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <img src="SkyClfLogo.png" alt="SkyClf Logo" class="w-10 h-10" />
+          <span class="text-xl font-bold">SkyClf</span>
+        </div>
+        <div class="flex items-center space-x-6">
+          <a href="#features" class="text-gray-300 hover:text-white transition"
+            >Features</a
+          >
+          <a
+            href="#quickstart"
+            class="text-gray-300 hover:text-white transition"
+            >Quick Start</a
+          >
+          <a href="#api" class="text-gray-300 hover:text-white transition"
+            >API</a
+          >
+          <a
+            href="https://github.com/SkyClf/skyclf"
+            target="_blank"
+            class="bg-accent-blue/20 hover:bg-accent-blue/30 px-4 py-2 rounded-lg border border-accent-blue/50 transition flex items-center space-x-2"
+          >
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+              />
+            </svg>
+            <span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative z-10 container mx-auto px-6 py-20 text-center">
+      <div class="max-w-4xl mx-auto">
+        <img
+          src="SkyClfLogo.png"
+          alt="SkyClf"
+          class="w-32 h-32 mx-auto mb-8 glow rounded-2xl"
+        />
+        <h1 class="text-5xl md:text-6xl font-bold mb-6">
+          <span class="gradient-text">Real-time Sky Classification</span>
+        </h1>
+        <p class="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
+          Open-source machine learning system that classifies AllSky camera
+          images in real-time. Detect clear skies, clouds, and precipitation
+          automatically.
+        </p>
+        <div
+          class="flex flex-col sm:flex-row items-center justify-center gap-4"
+        >
+          <a
+            href="#quickstart"
+            class="bg-accent-blue hover:bg-accent-blue/80 px-8 py-3 rounded-lg font-semibold transition transform hover:scale-105"
+          >
+            Get Started
+          </a>
+          <a
+            href="https://github.com/SkyClf/skyclf"
+            target="_blank"
+            class="border border-gray-600 hover:border-gray-400 px-8 py-3 rounded-lg font-semibold transition"
+          >
+            View on GitHub
+          </a>
+        </div>
+      </div>
+
+      <!-- Demo Response -->
+      <div class="mt-16 max-w-md mx-auto">
+        <div class="card rounded-xl p-6 text-left">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-sm text-gray-400">GET /api/clf</span>
+            <span
+              class="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded"
+              >~30ms</span
+            >
+          </div>
+          <pre class="text-sm overflow-x-auto"><code class="text-gray-300">{
+  <span class="text-accent-cyan">"skystate"</span>: <span class="text-green-400">"clear"</span>,
+  <span class="text-accent-cyan">"confidence"</span>: <span class="text-accent-purple">0.9847</span>,
+  <span class="text-accent-cyan">"probs"</span>: {
+    <span class="text-gray-500">"clear"</span>: <span class="text-gray-400">0.9847</span>,
+    <span class="text-gray-500">"light_clouds"</span>: <span class="text-gray-400">0.0102</span>,
+    <span class="text-gray-500">"heavy_clouds"</span>: <span class="text-gray-400">0.0038</span>,
+    <span class="text-gray-500">"precipitation"</span>: <span class="text-gray-400">0.0013</span>
+  }
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="relative z-10 container mx-auto px-6 py-20">
+      <h2 class="text-3xl font-bold text-center mb-12">Features</h2>
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="card rounded-xl p-6">
+          <div
+            class="w-12 h-12 bg-accent-blue/20 rounded-lg flex items-center justify-center mb-4"
+          >
+            <svg
+              class="w-6 h-6 text-accent-blue"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">Real-time Inference</h3>
+          <p class="text-gray-400 text-sm">
+            ONNX Runtime powered predictions in under 50ms on CPU.
+          </p>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <div
+            class="w-12 h-12 bg-accent-purple/20 rounded-lg flex items-center justify-center mb-4"
+          >
+            <svg
+              class="w-6 h-6 text-accent-purple"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">REST API</h3>
+          <p class="text-gray-400 text-sm">
+            Simple JSON API endpoints for easy integration.
+          </p>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <div
+            class="w-12 h-12 bg-accent-cyan/20 rounded-lg flex items-center justify-center mb-4"
+          >
+            <svg
+              class="w-6 h-6 text-accent-cyan"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"
+              />
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">Docker Ready</h3>
+          <p class="text-gray-400 text-sm">
+            One command deployment with Docker Compose.
+          </p>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <div
+            class="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center mb-4"
+          >
+            <svg
+              class="w-6 h-6 text-green-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+              />
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">Train Your Own</h3>
+          <p class="text-gray-400 text-sm">
+            Label images and train custom models for your sky.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Classification Types -->
+    <section class="relative z-10 container mx-auto px-6 py-20">
+      <h2 class="text-3xl font-bold text-center mb-12">Sky Classifications</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
+        <div class="text-center">
+          <div
+            class="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center"
+          >
+            <span class="text-3xl">☀️</span>
+          </div>
+          <span class="font-medium">Clear</span>
+        </div>
+        <div class="text-center">
+          <div
+            class="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 flex items-center justify-center"
+          >
+            <span class="text-3xl">🌤️</span>
+          </div>
+          <span class="font-medium">Light Clouds</span>
+        </div>
+        <div class="text-center">
+          <div
+            class="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-gray-500 to-gray-700 flex items-center justify-center"
+          >
+            <span class="text-3xl">☁️</span>
+          </div>
+          <span class="font-medium">Heavy Clouds</span>
+        </div>
+        <div class="text-center">
+          <div
+            class="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center"
+          >
+            <span class="text-3xl">🌧️</span>
+          </div>
+          <span class="font-medium">Precipitation</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section id="quickstart" class="relative z-10 container mx-auto px-6 py-20">
+      <h2 class="text-3xl font-bold text-center mb-12">Quick Start</h2>
+      <div class="max-w-3xl mx-auto">
+        <div class="card rounded-xl p-6 mb-6">
+          <h3 class="font-semibold mb-4 flex items-center">
+            <span
+              class="bg-accent-blue text-white w-6 h-6 rounded-full text-sm flex items-center justify-center mr-3"
+              >1</span
+            >
+            Clone the repository
+          </h3>
+          <pre
+            class="bg-sky-950 rounded-lg p-4 overflow-x-auto"
+          ><code class="text-gray-300">git clone https://github.com/SkyClf/skyclf.git
+cd skyclf</code></pre>
+        </div>
+
+        <div class="card rounded-xl p-6 mb-6">
+          <h3 class="font-semibold mb-4 flex items-center">
+            <span
+              class="bg-accent-blue text-white w-6 h-6 rounded-full text-sm flex items-center justify-center mr-3"
+              >2</span
+            >
+            Configure your AllSky camera URL
+          </h3>
+          <pre
+            class="bg-sky-950 rounded-lg p-4 overflow-x-auto"
+          ><code class="text-gray-300"><span class="text-gray-500"># Edit docker-compose.yml</span>
+- SKYCLF_ALLSKY_URL=http://your-camera-ip/latest.jpg</code></pre>
+        </div>
+
+        <div class="card rounded-xl p-6 mb-6">
+          <h3 class="font-semibold mb-4 flex items-center">
+            <span
+              class="bg-accent-blue text-white w-6 h-6 rounded-full text-sm flex items-center justify-center mr-3"
+              >3</span
+            >
+            Start with Docker
+          </h3>
+          <pre
+            class="bg-sky-950 rounded-lg p-4 overflow-x-auto"
+          ><code class="text-gray-300">docker compose up -d</code></pre>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <h3 class="font-semibold mb-4 flex items-center">
+            <span
+              class="bg-accent-blue text-white w-6 h-6 rounded-full text-sm flex items-center justify-center mr-3"
+              >4</span
+            >
+            Get predictions
+          </h3>
+          <pre
+            class="bg-sky-950 rounded-lg p-4 overflow-x-auto"
+          ><code class="text-gray-300">curl http://localhost:8080/api/clf</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- API Section -->
+    <section id="api" class="relative z-10 container mx-auto px-6 py-20">
+      <h2 class="text-3xl font-bold text-center mb-12">API Endpoints</h2>
+      <div class="max-w-4xl mx-auto grid md:grid-cols-2 gap-6">
+        <div class="card rounded-xl p-6">
+          <div class="flex items-center space-x-3 mb-4">
+            <span
+              class="bg-green-500/20 text-green-400 px-2 py-1 rounded text-sm font-mono"
+              >GET</span
+            >
+            <code class="text-accent-cyan">/api/clf</code>
+          </div>
+          <p class="text-gray-400 text-sm mb-4">
+            Simple classification response with skystate and confidence.
+          </p>
+          <pre class="bg-sky-950 rounded-lg p-3 text-xs overflow-x-auto"><code>{
+  "skystate": "clear",
+  "confidence": 0.9847,
+  "probs": {...}
+}</code></pre>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <div class="flex items-center space-x-3 mb-4">
+            <span
+              class="bg-green-500/20 text-green-400 px-2 py-1 rounded text-sm font-mono"
+              >GET</span
+            >
+            <code class="text-accent-cyan">/api/latest</code>
+          </div>
+          <p class="text-gray-400 text-sm mb-4">
+            Full details including image metadata, labels, and prediction.
+          </p>
+          <pre class="bg-sky-950 rounded-lg p-3 text-xs overflow-x-auto"><code>{
+  "status": "ok",
+  "image": {...},
+  "label": {...},
+  "prediction": {...}
+}</code></pre>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <div class="flex items-center space-x-3 mb-4">
+            <span
+              class="bg-green-500/20 text-green-400 px-2 py-1 rounded text-sm font-mono"
+              >GET</span
+            >
+            <code class="text-accent-cyan">/latest.jpg</code>
+          </div>
+          <p class="text-gray-400 text-sm">
+            Serves the latest fetched AllSky camera image directly.
+          </p>
+        </div>
+
+        <div class="card rounded-xl p-6">
+          <div class="flex items-center space-x-3 mb-4">
+            <span
+              class="bg-green-500/20 text-green-400 px-2 py-1 rounded text-sm font-mono"
+              >GET</span
+            >
+            <code class="text-accent-cyan">/health</code>
+          </div>
+          <p class="text-gray-400 text-sm">
+            Health check endpoint for monitoring and load balancers.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- More Projects -->
+    <section class="relative z-10 container mx-auto px-6 py-20">
+      <h2 class="text-3xl font-bold text-center mb-12">More Projects</h2>
+      <div class="flex flex-wrap justify-center gap-4">
+        <a
+          href="https://github.com/SkyClf"
+          target="_blank"
+          class="card rounded-xl px-6 py-3 hover:border-accent-blue/50 transition flex items-center space-x-2"
+        >
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path
+              d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+            />
+          </svg>
+          <span>SkyClf Organization</span>
+        </a>
+        <a
+          href="https://github.com/julianbrendl"
+          target="_blank"
+          class="card rounded-xl px-6 py-3 hover:border-accent-purple/50 transition flex items-center space-x-2"
+        >
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path
+              d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+            />
+          </svg>
+          <span>@julianbrendl</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="relative z-10 border-t border-gray-800 mt-20">
+      <div class="container mx-auto px-6 py-12">
+        <div class="flex flex-col md:flex-row items-center justify-between">
+          <div class="flex items-center space-x-3 mb-4 md:mb-0">
+            <img src="SkyClfLogo.png" alt="SkyClf" class="w-8 h-8" />
+            <span class="font-semibold">SkyClf</span>
+          </div>
+          <p class="text-gray-400 text-sm">
+            Open source · MIT License · Built with ❤️ for astronomy
+          </p>
+          <div class="flex items-center space-x-4 mt-4 md:mt-0">
+            <a
+              href="https://github.com/SkyClf/skyclf"
+              target="_blank"
+              class="text-gray-400 hover:text-white transition"
+            >
+              <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+                />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
