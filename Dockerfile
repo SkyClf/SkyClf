@@ -1,7 +1,7 @@
 # ============================================
 # Build stage
 # ============================================
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install ONNX Runtime
-ARG ORT_VERSION=1.16.3
+# onnxruntime_go v1.24.0 requires ORT 1.22+ (API version 22)
+ARG ORT_VERSION=1.23.2
 RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz \
     && tar xzf onnxruntime-linux-x64-${ORT_VERSION}.tgz \
     && cp onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so* /usr/lib/ \
