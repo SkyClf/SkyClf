@@ -1,0 +1,30 @@
+# Build stage
+FROM golang:1.23-alpine AS builder
+
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=1 go build -o skyclf ./cmd/server
+
+# Runtime stage
+FROM alpine:3.19
+
+# Install ONNX Runtime
+RUN apk add --no-cache wget ca-certificates libstdc++ && \
+    wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-1.16.3.tgz && \
+    tar xzf onnxruntime-linux-x64-1.16.3.tgz && \
+    mv onnxruntime-linux-x64-1.16.3/lib/libonnxruntime.so.1.16.3 /usr/lib/ && \
+    ln -s /usr/lib/libonnxruntime.so.1.16.3 /usr/lib/libonnxruntime.so && \
+    rm -rf onnxruntime-linux-x64-1.16.3*
+
+WORKDIR /app
+COPY --from=builder /app/skyclf .
+
+ENV SKYCLF_ORT_LIB=/usr/lib/libonnxruntime.so
+
+EXPOSE 8080
+CMD ["./skyclf"]

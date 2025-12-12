@@ -11,6 +11,7 @@ import (
 	"github.com/SkyClf/SkyClf/internal/api"
 	"github.com/SkyClf/SkyClf/internal/config"
 	"github.com/SkyClf/SkyClf/internal/fetcher"
+	"github.com/SkyClf/SkyClf/internal/infer"
 	"github.com/SkyClf/SkyClf/internal/store"
 )
 
@@ -19,6 +20,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+
+	pred, err := infer.NewORTPredictor(cfg.ModelsDir)
+	if err != nil {
+		log.Fatalf("infer init: %v", err)
+	}
+	defer func() { if pred != nil { _ = pred.Close() } }()
 
 	// Open label DB (also stores images metadata)
 	st, err := store.Open(cfg.LabelsDBPath)
@@ -74,11 +81,13 @@ func main() {
 		w.Write([]byte("ok\n"))
 	})
 
+	
+
 	// Dataset API (images list + labels)
 	datasetHandler := api.NewDatasetHandler(st)
 	datasetHandler.RegisterRoutes(mux)
 
-	latestHandler := api.NewLatestHandler(st)
+	latestHandler := api.NewLatestHandler(st, cfg.ImagesDir, pred)
 	latestHandler.RegisterRoutes(mux)
 
 	// Start server
