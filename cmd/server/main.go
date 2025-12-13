@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/SkyClf/SkyClf/internal/api"
@@ -13,6 +14,7 @@ import (
 	"github.com/SkyClf/SkyClf/internal/fetcher"
 	"github.com/SkyClf/SkyClf/internal/infer"
 	"github.com/SkyClf/SkyClf/internal/store"
+	"github.com/SkyClf/SkyClf/internal/trainer"
 )
 
 func main() {
@@ -89,6 +91,39 @@ func main() {
 
 	latestHandler := api.NewLatestHandler(st, cfg.ImagesDir, pred)
 	latestHandler.RegisterRoutes(mux)
+
+	// Trainer API (start/stop/status)
+	tr, err := trainer.NewTrainer(cfg.TrainerContainer)
+	if err != nil {
+		log.Printf("trainer init warning (training disabled): %v", err)
+	} else {
+		defer tr.Close()
+		trainerHandler := api.NewTrainerHandler(tr)
+		trainerHandler.RegisterRoutes(mux)
+		log.Printf("trainer ready: container=%s", cfg.TrainerContainer)
+	}
+
+	// Serve frontend from ui/dist (built Vue app)
+	uiDir := "./ui/dist"
+	if _, err := os.Stat(uiDir); err == nil {
+		fs := http.FileServer(http.Dir(uiDir))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Serve index.html for SPA routes (non-API, non-file requests)
+			path := r.URL.Path
+			if path != "/" && !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/latest") {
+				// Check if file exists
+				if _, err := os.Stat(uiDir + path); os.IsNotExist(err) {
+					// SPA fallback: serve index.html
+					http.ServeFile(w, r, uiDir+"/index.html")
+					return
+				}
+			}
+			fs.ServeHTTP(w, r)
+		})
+		log.Printf("serving frontend from %s", uiDir)
+	} else {
+		log.Printf("frontend not found at %s (run 'npm run build' in ui/)", uiDir)
+	}
 
 	// Start server
 	server := &http.Server{Addr: cfg.Addr, Handler: mux}

@@ -40,6 +40,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/skyclf .
 
+# Copy frontend dist (pre-built)
+COPY ui/dist ./ui/dist
+
 # Create data directories
 RUN mkdir -p /data/images /data/models /data/labels
 

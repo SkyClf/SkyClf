@@ -8,6 +8,8 @@ services:
     volumes:
       # Persist data (images, models, labels)
       - ./data:/data
+      # Docker socket to start/stop trainer container
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - SKYCLF_ADDR=:8080
       - SKYCLF_ALLSKY_URL=http://192.168.178.88/current/tmp/image.jpg
@@ -17,9 +19,26 @@ services:
       - SKYCLF_IMAGES_DIR=/data/images
       - SKYCLF_LABELS_DB=/data/labels/labels.db
       - SKYCLF_LOG_LEVEL=info
+      # Trainer container name (must match trainer service container_name)
+      - SKYCLF_TRAINER_CONTAINER=skyclf-trainer
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  # Trainer - built but not started by default (Go backend starts it)
+  trainer:
+    build:
+      context: ../SkyClf-Trainer
+      dockerfile: Dockerfile
+    image: skyclf-trainer:local
+    container_name: skyclf-trainer
+    restart: "no"
+    volumes:
+      - ./data:/data
+    environment:
+      - SKYCLF_DATA_DIR=/data
+    command:
+      ["echo", "Trainer container created. Will be started by SkyClf backend."]

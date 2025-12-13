@@ -20,6 +20,9 @@ type Config struct {
 	ImagesDir     string        // e.g. "./data/images"
 	LabelsDBPath  string        // e.g. "./data/labels/labels.db"
 	LogLevel      string        // "debug"|"info"|"warn"|"error"
+
+	// Trainer settings
+	TrainerContainer string // Container name for trainer, e.g. "skyclf-trainer"
 }
 
 func Load() (Config, error) {
@@ -38,6 +41,9 @@ func Load() (Config, error) {
 	cfg.ModelsDir = getenv("SKYCLF_MODELS_DIR", cfg.DataDir+"/models")
 	cfg.ImagesDir = getenv("SKYCLF_IMAGES_DIR", cfg.DataDir+"/images")
 	cfg.LabelsDBPath = getenv("SKYCLF_LABELS_DB", cfg.DataDir+"/labels/labels.db")
+
+	// Trainer settings
+	cfg.TrainerContainer = getenv("SKYCLF_TRAINER_CONTAINER", "skyclf-trainer")
 
 	// Validation
 	var errs []string
