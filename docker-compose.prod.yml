@@ -46,8 +46,9 @@ services:
       - skyclf-data:/data
     environment:
       - SKYCLF_DATA_DIR=/data
-    # Default command - will be overridden by Go backend with actual params
-    command: ["python", "-m", "trainer.train", "--epochs", "10"]
+    # Placeholder command - will be overridden by Go backend with actual params
+    command:
+      ["echo", "Trainer container created. Will be started by SkyClf backend."]
     profiles:
       - training # Not started by default with 'docker compose up'
 

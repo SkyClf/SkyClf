@@ -17,8 +17,9 @@ import (
 type ORTPredictor struct {
 	mu sync.Mutex
 
-	model   *ModelInfo
-	session *ort.Session[float32]
+	modelsDir string
+	model     *ModelInfo
+	session   *ort.Session[float32]
 
 	inTensor  *ort.Tensor[float32]
 	outTensor *ort.Tensor[float32]
@@ -97,6 +98,7 @@ func NewORTPredictor(modelsDir string) (*ORTPredictor, error) {
 
 	log.Printf("[infer] ONNX session loaded successfully")
 	return &ORTPredictor{
+		modelsDir: modelsDir,
 		model:     mi,
 		session:   sess,
 		inTensor:  inTensor,
@@ -121,6 +123,111 @@ func (p *ORTPredictor) Close() error {
 		_ = p.outTensor.Destroy()
 	}
 	// Note: DestroyEnvironment() is global; you can call it on shutdown if you want.
+	return nil
+}
+
+// Reload scans for new models and loads the latest one
+func (p *ORTPredictor) Reload(modelsDir string) error {
+	if p == nil {
+		return fmt.Errorf("predictor is nil")
+	}
+	
+	if modelsDir == "" {
+		modelsDir = p.modelsDir
+	}
+	
+	log.Printf("[infer] reloading models from %s", modelsDir)
+	
+	mi, err := FindLatestSkyStateModel(modelsDir)
+	if err != nil {
+		return fmt.Errorf("scan models: %w", err)
+	}
+	if mi == nil {
+		log.Printf("[infer] no model found during reload")
+		return nil
+	}
+	
+	// Check if it's the same model we already have
+	p.mu.Lock()
+	if p.model != nil && p.model.OnnxPath == mi.OnnxPath {
+		p.mu.Unlock()
+		log.Printf("[infer] model unchanged: %s", mi.Version)
+		return nil
+	}
+	p.mu.Unlock()
+	
+	log.Printf("[infer] loading new model: %s (version=%s, classes=%v)", mi.OnnxPath, mi.Version, mi.ClassNames)
+	
+	// Create new tensors
+	inShape := ort.NewShape(1, 3, 224, 224)
+	outShape := ort.NewShape(1, int64(len(mi.ClassNames)))
+
+	inData := make([]float32, inShape.FlattenedSize())
+	newInTensor, err := ort.NewTensor(inShape, inData)
+	if err != nil {
+		return fmt.Errorf("create input tensor: %w", err)
+	}
+
+	newOutTensor, err := ort.NewEmptyTensor[float32](outShape)
+	if err != nil {
+		_ = newInTensor.Destroy()
+		return fmt.Errorf("create output tensor: %w", err)
+	}
+
+	// Change to model directory for external data files
+	modelDir := filepath.Dir(mi.OnnxPath)
+	origDir, err := os.Getwd()
+	if err != nil {
+		_ = newInTensor.Destroy()
+		_ = newOutTensor.Destroy()
+		return fmt.Errorf("get working dir: %w", err)
+	}
+	if err := os.Chdir(modelDir); err != nil {
+		_ = newInTensor.Destroy()
+		_ = newOutTensor.Destroy()
+		return fmt.Errorf("chdir to model dir: %w", err)
+	}
+	
+	newSession, err := ort.NewSession[float32](
+		filepath.Base(mi.OnnxPath),
+		[]string{"input"},
+		[]string{"logits"},
+		[]*ort.Tensor[float32]{newInTensor},
+		[]*ort.Tensor[float32]{newOutTensor},
+	)
+	os.Chdir(origDir) // restore working dir
+	
+	if err != nil {
+		_ = newInTensor.Destroy()
+		_ = newOutTensor.Destroy()
+		return fmt.Errorf("create session: %w", err)
+	}
+
+	// Swap out old session/tensors
+	p.mu.Lock()
+	oldSession := p.session
+	oldIn := p.inTensor
+	oldOut := p.outTensor
+	
+	p.model = mi
+	p.session = newSession
+	p.inTensor = newInTensor
+	p.outTensor = newOutTensor
+	p.modelsDir = modelsDir
+	p.mu.Unlock()
+	
+	// Cleanup old resources
+	if oldSession != nil {
+		_ = oldSession.Destroy()
+	}
+	if oldIn != nil {
+		_ = oldIn.Destroy()
+	}
+	if oldOut != nil {
+		_ = oldOut.Destroy()
+	}
+	
+	log.Printf("[infer] model reloaded: %s (version=%s)", mi.OnnxPath, mi.Version)
 	return nil
 }
 

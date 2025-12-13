@@ -59,6 +59,9 @@ type Trainer struct {
 
 	// Config - container name from compose stack
 	containerName string // e.g. "skyclf-trainer"
+	
+	// Callback when training completes successfully
+	OnComplete func()
 }
 
 // NewTrainer creates a new Trainer instance
@@ -227,10 +230,15 @@ func (t *Trainer) monitor(containerID string) {
 		} else if result.StatusCode != 0 {
 			t.lastError = fmt.Sprintf("training failed with exit code %d", result.StatusCode)
 		}
+		onComplete := t.OnComplete
 		t.mu.Unlock()
 
 		if result.StatusCode == 0 {
 			log.Printf("trainer: completed successfully")
+			// Call completion callback (e.g., to reload models)
+			if onComplete != nil {
+				onComplete()
+			}
 		} else {
 			log.Printf("trainer: exited with code %d", result.StatusCode)
 		}

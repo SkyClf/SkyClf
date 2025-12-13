@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -98,10 +99,49 @@ func main() {
 		log.Printf("trainer init warning (training disabled): %v", err)
 	} else {
 		defer tr.Close()
+		
+		// Auto-reload model when training completes
+		tr.OnComplete = func() {
+			log.Printf("trainer: reloading models after training completion")
+			if pred != nil {
+				if err := pred.Reload(cfg.ModelsDir); err != nil {
+					log.Printf("trainer: model reload error: %v", err)
+				}
+			}
+		}
+		
 		trainerHandler := api.NewTrainerHandler(tr)
 		trainerHandler.RegisterRoutes(mux)
 		log.Printf("trainer ready: container=%s", cfg.TrainerContainer)
 	}
+	
+	// Models API (reload endpoint)
+	mux.HandleFunc("POST /api/models/reload", func(w http.ResponseWriter, r *http.Request) {
+		if pred == nil {
+			http.Error(w, `{"error":"predictor not initialized"}`, http.StatusInternalServerError)
+			return
+		}
+		if err := pred.Reload(cfg.ModelsDir); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok","message":"models reloaded"}`))
+	})
+	
+	mux.HandleFunc("GET /api/models", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if pred == nil {
+			w.Write([]byte(`{"active":null}`))
+			return
+		}
+		data, err := pred.ModelJSON()
+		if err != nil {
+			http.Error(w, `{"error":"json encode"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Write(data)
+	})
 
 	// Serve frontend from ui/dist (built Vue app)
 	uiDir := "./ui/dist"
