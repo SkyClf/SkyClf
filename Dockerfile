@@ -1,13 +1,13 @@
 # ============================================
 # UI Build stage
 # ============================================
-FROM node:20-alpine AS ui-builder
+FROM node:20-slim AS ui-builder
 
 WORKDIR /ui
 
 # Copy package files first for better caching
 COPY ui/package.json ui/package-lock.json* ./
-RUN npm install
+RUN npm ci
 
 # Copy UI source and build
 COPY ui/ ./
