@@ -1,5 +1,20 @@
 # ============================================
-# Build stage
+# UI Build stage
+# ============================================
+FROM node:20-alpine AS ui-builder
+
+WORKDIR /ui
+
+# Copy package files first for better caching
+COPY ui/package.json ui/package-lock.json* ./
+RUN npm install
+
+# Copy UI source and build
+COPY ui/ ./
+RUN npm run build
+
+# ============================================
+# Go Build stage
 # ============================================
 FROM golang:1.25-bookworm AS builder
 
@@ -40,8 +55,8 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/skyclf .
 
-# Copy frontend dist (pre-built)
-COPY ui/dist ./ui/dist
+# Copy frontend dist from ui-builder
+COPY --from=ui-builder /ui/dist ./ui/dist
 
 # Create data directories
 RUN mkdir -p /data/images /data/models /data/labels
