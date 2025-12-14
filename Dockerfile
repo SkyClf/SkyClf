@@ -5,12 +5,15 @@ FROM node:20-slim AS ui-builder
 
 WORKDIR /ui
 
-# Copy package files first for better caching
-COPY ui/package.json ui/package-lock.json* ./
+# 1. Copy ALL source files first (including your local node_modules)
+COPY ui/ ./
+
+# 2. Force a clean install inside the container
+# npm ci will automatically delete the local node_modules you just copied
+# and reinstall the correct Linux binaries (fixing the Rollup error)
 RUN npm ci
 
-# Copy UI source and build
-COPY ui/ ./
+# 3. Now run the build
 RUN npm run build
 
 # ============================================
@@ -42,7 +45,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install ONNX Runtime
-# onnxruntime_go v1.24.0 requires ORT 1.22+ (API version 22)
 ARG ORT_VERSION=1.23.2
 RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz \
     && tar xzf onnxruntime-linux-x64-${ORT_VERSION}.tgz \
