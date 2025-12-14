@@ -5,15 +5,18 @@ FROM node:20-slim AS ui-builder
 
 WORKDIR /ui
 
-# 1. Copy ALL source files first (including your local node_modules)
+# 1. Copy everything (ignoring node_modules via .dockerignore if possible, but this safeguards it)
 COPY ui/ ./
 
-# 2. Force a clean install inside the container
-# npm ci will automatically delete the local node_modules you just copied
-# and reinstall the correct Linux binaries (fixing the Rollup error)
-RUN npm ci
+# 2. DELETE the lock files to ensure no conflict
+# This ensures npm doesn't get confused by a Bun-generated lockfile
+RUN rm -f package-lock.json bun.lock bun.lockb
 
-# 3. Now run the build
+# 3. Install fresh dependencies
+# 'npm install' will look at package.json and download the correct Linux binaries
+RUN npm install
+
+# 4. Build
 RUN npm run build
 
 # ============================================

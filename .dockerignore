@@ -1,6 +1,12 @@
+# .dockerignore file content
+# -----------------------------
+
+# Critical: Ignore node_modules in the UI directory
+ui/node_modules
+
+# Also ignore node_modules anywhere else, just in case
 **/node_modules
+
+# Ignore common build/dist folders
 **/dist
 .git
-
-# Ignore Go build artifacts
-skyclf
