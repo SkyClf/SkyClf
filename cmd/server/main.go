@@ -100,7 +100,7 @@ func main() {
 	} else {
 		defer tr.Close()
 		
-		// Auto-reload model when training completes
+		// Auto-reload model when training completess
 		tr.OnComplete = func() {
 			log.Printf("trainer: reloading models after training completion")
 			if pred != nil {
