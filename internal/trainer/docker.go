@@ -74,10 +74,16 @@ func NewTrainer(containerName string) (*Trainer, error) {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
 
-	return &Trainer{
+	t := &Trainer{
 		cli:           cli,
 		containerName: containerName,
-	}, nil
+	}
+
+	// Best-effort cleanup of any stale job container that might exist from a previous run.
+	// On redeploy we want the trainer to be idle by default.
+	t.cleanupStaleJobContainer(context.Background())
+
+	return t, nil
 }
 
 // Close cleans up the Docker client
@@ -86,6 +92,36 @@ func (t *Trainer) Close() error {
 		return t.cli.Close()
 	}
 	return nil
+}
+
+// cleanupStaleJobContainer removes any leftover job container so a fresh deploy starts idle.
+func (t *Trainer) cleanupStaleJobContainer(ctx context.Context) {
+	jobName := t.jobContainerName()
+	info, err := t.cli.ContainerInspect(ctx, jobName)
+	if err != nil {
+		return
+	}
+
+	if info.State != nil && info.State.Running {
+		timeout := 10
+		if err := t.cli.ContainerStop(ctx, info.ID, container.StopOptions{Timeout: &timeout}); err != nil && !client.IsErrNotFound(err) {
+			log.Printf("trainer: stop stale job container %s: %v", jobName, err)
+		}
+	}
+
+	if err := t.cli.ContainerRemove(ctx, info.ID, container.RemoveOptions{Force: true}); err != nil && !client.IsErrNotFound(err) {
+		log.Printf("trainer: remove stale job container %s: %v", jobName, err)
+		return
+	}
+
+	t.mu.Lock()
+	if t.jobContainerID == info.ID {
+		t.jobContainerID = ""
+	}
+	t.running = false
+	t.mu.Unlock()
+
+	log.Printf("trainer: removed stale job container %s", jobName)
 }
 
 // Status returns the current training status
