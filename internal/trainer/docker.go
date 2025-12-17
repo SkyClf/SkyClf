@@ -13,7 +13,7 @@ import (
 	"github.com/docker/docker/client"
 )
 
-// TrainConfig holds the training parameters from the UI
+// TrainConsfig holds the training parameters from the UI
 type TrainConfig struct {
 	Epochs      int    `json:"epochs"`
 	BatchSize   int    `json:"batch_size"`
@@ -79,7 +79,7 @@ func NewTrainer(containerName string) (*Trainer, error) {
 		containerName: containerName,
 	}
 
-	// Best-effort cleanup of any stale job container that might exist from a previous run.
+	// Bestd-effort cleanup of any stale job container that might exist from a previous run.
 	// On redeploy we want the trainer to be idle by default.
 	t.cleanupStaleJobContainer(context.Background())
 
