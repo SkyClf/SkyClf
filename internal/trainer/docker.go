@@ -49,21 +49,18 @@ type TrainStatus struct {
 
 // Trainer manages the SkyClf-Trainer Docker container
 type Trainer struct {
-	mu           sync.RWMutex
-	cli          *client.Client
-	running      bool
-	startedAt    time.Time
-	lastExitCode int
-	lastError    string
-	lastLogs     string
-	lastConfig   *TrainConfig
+	mu             sync.RWMutex
+	cli            *client.Client
+	running        bool
+	startedAt      time.Time
+	lastExitCode   int
+	lastError      string
+	lastLogs       string
+	lastConfig     *TrainConfig
+	jobContainerID string
 
 	// Config - container name from compose stack
 	containerName string // e.g. "skyclf-trainer"
-
-	// Base container config we clone for training/idle containers
-	baseConfig     *container.Config
-	baseHostConfig *container.HostConfig
 
 	// Callback when training completes successfully
 	OnComplete func()
@@ -93,13 +90,13 @@ func (t *Trainer) Close() error {
 
 // Status returns the current training status
 func (t *Trainer) Status(ctx context.Context) TrainStatus {
-	// Check actual container state first (may block a bit)
-	containerID, containerRunning := t.getContainerState(ctx)
+	// Check actual training container state first (may block a bit)
+	containerID, containerRunning := t.getJobContainerState(ctx)
 
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	trainingRunning := t.running && containerRunning
+	trainingRunning := containerRunning
 
 	status := TrainStatus{
 		Running:     trainingRunning,
@@ -122,24 +119,49 @@ func (t *Trainer) Status(ctx context.Context) TrainStatus {
 	return status
 }
 
-// getContainerState checks if the trainer container exists and is running
-func (t *Trainer) getContainerState(ctx context.Context) (containerID string, running bool) {
-	info, err := t.cli.ContainerInspect(ctx, t.containerName)
-	if err != nil {
-		return "", false
+// getJobContainerState checks if the training job container exists and is running.
+// It tries the cached ID first, then falls back to looking up by name so state
+// survives backend restarts.
+func (t *Trainer) getJobContainerState(ctx context.Context) (containerID string, running bool) {
+	t.mu.RLock()
+	cached := t.jobContainerID
+	t.mu.RUnlock()
+
+	inspect := func(ref string) (string, bool) {
+		info, err := t.cli.ContainerInspect(ctx, ref)
+		if err != nil {
+			return "", false
+		}
+		return info.ID, info.State.Running
 	}
-	return info.ID, info.State.Running
+
+	if cached != "" {
+		if id, ok := inspect(cached); ok {
+			return id, true
+		}
+	}
+
+	name := t.jobContainerName()
+	id, ok := inspect(name)
+	if ok {
+		t.mu.Lock()
+		t.jobContainerID = id
+		t.mu.Unlock()
+	}
+	return id, ok
 }
 
-// Start starts a training job with the given config
-// It recreates the trainer container with the new command arguments
+// Start starts a training job with the given config.
+// It keeps the wrapper container untouched and launches a separate job container with the training command.
 func (t *Trainer) Start(ctx context.Context, cfg TrainConfig) error {
+	// Check if already running
+	if _, isRunning := t.getJobContainerState(ctx); isRunning {
+		return fmt.Errorf("training already in progress")
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	// Check if already running
-	_, isRunning := t.getContainerState(ctx)
-	if isRunning {
+	if t.running {
 		return fmt.Errorf("training already in progress")
 	}
 
@@ -148,12 +170,6 @@ func (t *Trainer) Start(ctx context.Context, cfg TrainConfig) error {
 	if err != nil {
 		return fmt.Errorf("trainer container not found (is docker-compose up?): %w", err)
 	}
-
-	// Keep a copy of the base config/host config so we can recreate an idle container later
-	cfgCopy := *existingInfo.Config
-	hostCopy := *existingInfo.HostConfig
-	t.baseConfig = &cfgCopy
-	t.baseHostConfig = &hostCopy
 
 	// Build new command with training params
 	cmd := []string{
@@ -169,16 +185,20 @@ func (t *Trainer) Start(ctx context.Context, cfg TrainConfig) error {
 		cmd = append(cmd, "--from-scratch")
 	}
 
-	// Remove old container
-	if err := t.cli.ContainerRemove(ctx, t.containerName, container.RemoveOptions{Force: true}); err != nil {
-		log.Printf("trainer: warning removing old container: %v", err)
+	cfgCopy := *existingInfo.Config
+	hostCopy := *existingInfo.HostConfig
+
+	// Always keep the wrapper container running; create a separate job container
+	jobName := t.jobContainerName()
+	if err := t.cli.ContainerRemove(ctx, jobName, container.RemoveOptions{Force: true}); err != nil && !client.IsErrNotFound(err) {
+		log.Printf("trainer: cleanup old job container: %v", err)
 	}
 
 	// Recreate with new command but same config (volumes, env, etc.)
 	newConfig := cfgCopy
 	newConfig.Cmd = cmd
 
-	resp, err := t.cli.ContainerCreate(ctx, &newConfig, &hostCopy, nil, nil, t.containerName)
+	resp, err := t.cli.ContainerCreate(ctx, &newConfig, &hostCopy, nil, nil, jobName)
 	if err != nil {
 		return fmt.Errorf("recreate container: %w", err)
 	}
@@ -190,33 +210,35 @@ func (t *Trainer) Start(ctx context.Context, cfg TrainConfig) error {
 
 	t.running = true
 	t.startedAt = time.Now()
+	t.lastExitCode = 0
 	t.lastError = ""
 	t.lastLogs = ""
 	t.lastConfig = &cfg
+	t.jobContainerID = resp.ID
 
 	// Monitor in background
 	go t.monitor(resp.ID)
 
-	log.Printf("trainer: started %s with epochs=%d batch=%d lr=%s", t.containerName, cfg.Epochs, cfg.BatchSize, cfg.LR)
+	log.Printf("trainer: started %s with epochs=%d batch=%d lr=%s", jobName, cfg.Epochs, cfg.BatchSize, cfg.LR)
 	return nil
 }
 
 // Stop stops the running training job
 func (t *Trainer) Stop(ctx context.Context) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	containerID, isRunning := t.getContainerState(ctx)
+	containerID, isRunning := t.getJobContainerState(ctx)
 	if !isRunning {
 		return fmt.Errorf("no training in progress")
 	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	timeout := 10
 	if err := t.cli.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout}); err != nil {
 		return fmt.Errorf("stop container: %w", err)
 	}
 
-	log.Printf("trainer: stopped %s", t.containerName)
+	log.Printf("trainer: stopped %s", t.jobContainerName())
 	return nil
 }
 
@@ -260,8 +282,16 @@ func (t *Trainer) monitor(containerID string) {
 		}
 	}
 
-	// After a run finishes, recreate the idle container so the stack stays healthy but training is not running
-	t.restoreIdleContainer(ctx)
+	// Remove finished job container so it doesn't auto-start on stack restarts
+	if err := t.cli.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil && !client.IsErrNotFound(err) {
+		log.Printf("trainer: cleanup job container: %v", err)
+	}
+
+	t.mu.Lock()
+	if t.jobContainerID == containerID {
+		t.jobContainerID = ""
+	}
+	t.mu.Unlock()
 }
 
 // getLogs retrieves the last N lines of container logs
@@ -305,36 +335,7 @@ func stripDockerLogHeaders(data []byte) string {
 	return strings.Join(lines, "")
 }
 
-// restoreIdleContainer recreates the trainer container with its original (idle) command
-// so redeploys and health checks see it running, but no training is executed.
-func (t *Trainer) restoreIdleContainer(ctx context.Context) {
-	t.mu.RLock()
-	baseCfg := t.baseConfig
-	baseHostCfg := t.baseHostConfig
-	t.mu.RUnlock()
-
-	if baseCfg == nil || baseHostCfg == nil {
-		return
-	}
-
-	// Remove any stopped training container (ignore errors)
-	if err := t.cli.ContainerRemove(ctx, t.containerName, container.RemoveOptions{Force: true}); err != nil {
-		log.Printf("trainer: warning removing training container: %v", err)
-	}
-
-	cfgCopy := *baseCfg
-	hostCopy := *baseHostCfg
-
-	resp, err := t.cli.ContainerCreate(ctx, &cfgCopy, &hostCopy, nil, nil, t.containerName)
-	if err != nil {
-		log.Printf("trainer: recreate idle container: %v", err)
-		return
-	}
-
-	if err := t.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		log.Printf("trainer: start idle container: %v", err)
-		return
-	}
-
-	log.Printf("trainer: idle container ready")
+// jobContainerName returns the name used for ephemeral training runs.
+func (t *Trainer) jobContainerName() string {
+	return t.containerName + "-job"
 }
