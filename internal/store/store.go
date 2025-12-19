@@ -192,11 +192,10 @@ type ImageWithLabel struct {
 }
 
 func (s *Store) ListImages(limit int, unlabeledOnly bool) ([]ImageWithLabel, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 200
-	}
+	useLimit := limit > 0
 
 	var q string
+	var args []any
 	if unlabeledOnly {
 		q = `
 SELECT i.id, i.path, i.sha256, i.fetched_at,
@@ -204,19 +203,22 @@ SELECT i.id, i.path, i.sha256, i.fetched_at,
 FROM images i
 LEFT JOIN labels l ON l.image_id = i.id
 WHERE l.image_id IS NULL
-ORDER BY i.fetched_at DESC
-LIMIT ?`
+ORDER BY i.fetched_at DESC`
 	} else {
 		q = `
 SELECT i.id, i.path, i.sha256, i.fetched_at,
        l.skystate, l.meteor, l.labeled_at
 FROM images i
 LEFT JOIN labels l ON l.image_id = i.id
-ORDER BY i.fetched_at DESC
-LIMIT ?`
+ORDER BY i.fetched_at DESC`
 	}
 
-	rows, err := s.DB.Query(q, limit)
+	if useLimit {
+		q += "\nLIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := s.DB.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
 	}

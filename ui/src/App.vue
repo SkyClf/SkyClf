@@ -35,8 +35,41 @@ interface ModelInfo {
   path?: string;
 }
 
+interface Prediction {
+  skystate: string;
+  confidence?: number;
+  probs?: Record<string, number>;
+  task?: string;
+  model_version?: string;
+  model_path?: string;
+}
+
+interface LatestPayload {
+  status: string;
+  timestamp: string;
+  image?: {
+    id: string;
+    sha256: string;
+    fetched_at: string;
+    url: string;
+    latest_url: string;
+  };
+  label?: {
+    skystate: string;
+    meteor?: boolean | null;
+    labeled_at?: string | null;
+  } | null;
+  prediction?: Prediction | null;
+}
+
+interface UploadPredictionResponse {
+  filename?: string;
+  size?: number;
+  prediction: Prediction;
+}
+
 // ============ State ============
-const activeTab = ref<"label" | "train">("label");
+const activeTab = ref<"label" | "train" | "classify">("label");
 
 // Labeling state
 const images = ref<ImageItem[]>([]);
@@ -64,6 +97,17 @@ const selectedModelVersion = ref<string | null>(null);
 const switchingModel = ref(false);
 const modelActionMessage = ref("");
 const lastReloadedRunId = ref<string | null>(null);
+
+// Classification state
+const classifyLoading = ref(false);
+const classifyError = ref("");
+const latestClassification = ref<LatestPayload | null>(null);
+const uploadFile = ref<File | null>(null);
+const uploadPreview = ref<string | null>(null);
+const uploadFileName = ref("");
+const uploadPrediction = ref<Prediction | null>(null);
+const uploadError = ref("");
+const uploadLoading = ref(false);
 
 let pollInterval: number | null = null;
 
@@ -127,10 +171,13 @@ const skystateOptions = [
 // ============ Labeling Functions ============
 async function fetchImages() {
   try {
-    const params = new URLSearchParams({ limit: "1000" });
+    const params = new URLSearchParams();
     if (showUnlabeledOnly.value) params.set("unlabeled", "1");
 
-    const res = await fetch(`/api/dataset/images?${params}`);
+    const query = params.toString();
+    const res = await fetch(
+      `/api/dataset/images${query ? `?${query}` : ""}`
+    );
     if (res.ok) {
       const data = await res.json();
       images.value = data.items || [];
@@ -156,7 +203,7 @@ async function fetchStats() {
       labeledByClass.value = data.by_class ?? {};
     } else {
       // Fallback to old behavior if stats route is unavailable
-      const alt = await fetch("/api/dataset/images?limit=10000");
+      const alt = await fetch("/api/dataset/images");
       if (alt.ok) {
         const data = await alt.json();
         const items = data.items || [];
@@ -419,6 +466,81 @@ async function useSelectedModel() {
   }
 }
 
+// ============ Classification Functions ============
+async function classifyLatest() {
+  classifyLoading.value = true;
+  classifyError.value = "";
+  try {
+    const res = await fetch("/api/latest");
+    if (!res.ok) {
+      const msg = await res.text();
+      throw new Error(msg || "Failed to classify latest image");
+    }
+    latestClassification.value = await res.json();
+  } catch (e: any) {
+    console.error("Failed to classify latest image", e);
+    classifyError.value =
+      e?.message || "Could not classify the latest captured image";
+    latestClassification.value = null;
+  } finally {
+    classifyLoading.value = false;
+  }
+}
+
+function resetUploadPreview() {
+  if (uploadPreview.value) {
+    URL.revokeObjectURL(uploadPreview.value);
+    uploadPreview.value = null;
+  }
+  uploadFile.value = null;
+  uploadFileName.value = "";
+  uploadPrediction.value = null;
+}
+
+function onUploadFileChange(e: Event) {
+  const target = e.target as HTMLInputElement;
+  const file = target.files?.[0] || null;
+  uploadFile.value = file;
+  uploadPrediction.value = null;
+  uploadError.value = "";
+  resetUploadPreview();
+
+  if (file) {
+    uploadPreview.value = URL.createObjectURL(file);
+    uploadFileName.value = file.name;
+  } else {
+    uploadFileName.value = "";
+  }
+}
+
+async function submitUploadClassification() {
+  if (!uploadFile.value) {
+    uploadError.value = "Please choose an image first.";
+    return;
+  }
+
+  uploadLoading.value = true;
+  uploadError.value = "";
+  try {
+    const form = new FormData();
+    form.append("file", uploadFile.value);
+    const res = await fetch("/api/classify", { method: "POST", body: form });
+    if (!res.ok) {
+      const msg = await res.text();
+      throw new Error(msg || "Upload failed");
+    }
+    const data: UploadPredictionResponse = await res.json();
+    uploadPrediction.value = data.prediction;
+    uploadFileName.value = data.filename || uploadFile.value.name;
+  } catch (e: any) {
+    console.error("Upload classification failed", e);
+    uploadError.value = e?.message || "Could not classify the uploaded file";
+    uploadPrediction.value = null;
+  } finally {
+    uploadLoading.value = false;
+  }
+}
+
 // Update model list on mount and after training
 onMounted(() => {
   fetchModelVersions();
@@ -451,6 +573,12 @@ watch(status, (newVal) => {
   }
 });
 
+watch(activeTab, (tab) => {
+  if (tab === "classify" && !latestClassification.value && !classifyLoading.value) {
+    classifyLatest();
+  }
+});
+
 // ============ Lifecycle ============
 onMounted(() => {
   fetchImages();
@@ -469,6 +597,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval);
   window.removeEventListener("keydown", handleKeydown);
+  resetUploadPreview();
 });
 </script>
 
@@ -498,6 +627,16 @@ onUnmounted(() => {
         >
           <span class="mdi mdi-brain"></span>
           <span>Train</span>
+        </button>
+        <button
+          :class="['nav-item', { active: activeTab === 'classify' }]"
+          @click="
+            activeTab = 'classify';
+            classifyLatest();
+          "
+        >
+          <span class="mdi mdi-camera-iris"></span>
+          <span>Classify</span>
         </button>
       </nav>
 
@@ -757,6 +896,191 @@ onUnmounted(() => {
               <div class="shortcut">
                 <kbd>M</kbd>
                 <span>Mark meteor</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Classify View -->
+      <div v-if="activeTab === 'classify'" class="classify-view">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <h1>Classify</h1>
+          </div>
+          <div class="toolbar-right">
+            <button
+              class="btn-primary ghost"
+              @click="classifyLatest"
+              :disabled="classifyLoading"
+            >
+              <span class="mdi mdi-camera-iris"></span>
+              {{ classifyLoading ? "Classifying..." : "Classify now" }}
+            </button>
+          </div>
+        </div>
+
+        <div class="classify-content">
+          <div class="classify-card">
+            <div class="classify-card-header">
+              <div>
+                <h3>Latest capture</h3>
+                <p class="muted">
+                  Run inference on the newest image pulled from the AllSky feed.
+                </p>
+              </div>
+              <span class="pill">Live</span>
+            </div>
+
+            <p v-if="classifyError" class="error-message small">
+              {{ classifyError }}
+            </p>
+
+            <div v-if="classifyLoading" class="loading-row">
+              <span class="mdi mdi-loading mdi-spin"></span>
+              <span>Running model...</span>
+            </div>
+
+            <div v-if="latestClassification?.image" class="latest-result">
+              <div class="latest-image">
+                <img
+                  :src="`${latestClassification.image.latest_url}?ts=${latestClassification.timestamp}`"
+                  :alt="latestClassification.image.id"
+                />
+              </div>
+              <div class="latest-meta">
+                <h4>{{ latestClassification.image.id }}</h4>
+                <p class="muted">
+                  {{
+                    new Date(
+                      latestClassification.image.fetched_at
+                    ).toLocaleString()
+                  }}
+                </p>
+                <div
+                  class="prediction-badge"
+                  v-if="latestClassification.prediction"
+                >
+                  <span class="mdi mdi-brain"></span>
+                  <span class="pred-label">
+                    {{ latestClassification.prediction.skystate }}
+                  </span>
+                  <span
+                    class="pred-confidence"
+                    v-if="
+                      latestClassification.prediction.confidence !== undefined
+                    "
+                  >
+                    {{
+                      (
+                        latestClassification.prediction.confidence * 100
+                      ).toFixed(1)
+                    }}%
+                  </span>
+                </div>
+                <div class="prediction-badge subtle" v-else>
+                  <span class="mdi mdi-alert"></span>
+                  <span>No prediction available</span>
+                </div>
+                <div
+                  class="prob-row"
+                  v-if="latestClassification.prediction?.probs"
+                >
+                  <div
+                    v-for="(val, key) in latestClassification.prediction.probs"
+                    :key="key"
+                    class="prob-item"
+                  >
+                    <span class="muted">{{ key }}</span>
+                    <div class="prob-bar">
+                      <div
+                        class="prob-fill"
+                        :style="{ width: Math.round(val * 100) + '%' }"
+                      ></div>
+                    </div>
+                    <span class="prob-value">{{ Math.round(val * 100) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="!classifyLoading" class="empty-state compact">
+              <span class="mdi mdi-camera-off empty-icon"></span>
+              <h2>No image yet</h2>
+              <p>Waiting for an image to classify.</p>
+            </div>
+          </div>
+
+          <div class="classify-card">
+            <div class="classify-card-header">
+              <div>
+                <h3>Upload &amp; test</h3>
+                <p class="muted">
+                  Send any JPG/PNG and get the model prediction back instantly.
+                </p>
+              </div>
+            </div>
+
+            <label class="upload-drop">
+              <input type="file" accept="image/*" @change="onUploadFileChange" />
+              <div>
+                <span class="mdi mdi-upload"></span>
+                <span>{{ uploadFileName || "Choose an image" }}</span>
+              </div>
+            </label>
+
+            <div v-if="uploadPreview" class="upload-preview">
+              <img :src="uploadPreview" :alt="uploadFileName" />
+              <button
+                class="icon-btn"
+                @click="resetUploadPreview"
+                title="Clear selection"
+              >
+                <span class="mdi mdi-close"></span>
+              </button>
+            </div>
+
+            <p v-if="uploadError" class="error-message small">
+              {{ uploadError }}
+            </p>
+
+            <div class="upload-actions">
+              <button
+                class="btn-primary"
+                @click="submitUploadClassification"
+                :disabled="uploadLoading"
+              >
+                <span class="mdi mdi-ray-start-arrow"></span>
+                {{ uploadLoading ? "Classifying..." : "Classify upload" }}
+              </button>
+            </div>
+
+            <div v-if="uploadPrediction" class="upload-result">
+              <div class="prediction-badge">
+                <span class="mdi mdi-check"></span>
+                <span class="pred-label">{{ uploadPrediction.skystate }}</span>
+                <span
+                  class="pred-confidence"
+                  v-if="uploadPrediction.confidence !== undefined"
+                >
+                  {{ (uploadPrediction.confidence * 100).toFixed(1) }}%
+                </span>
+              </div>
+              <div class="prob-row" v-if="uploadPrediction.probs">
+                <div
+                  v-for="(val, key) in uploadPrediction.probs"
+                  :key="key"
+                  class="prob-item"
+                >
+                  <span class="muted">{{ key }}</span>
+                  <div class="prob-bar">
+                    <div
+                      class="prob-fill"
+                      :style="{ width: Math.round(val * 100) + '%' }"
+                    ></div>
+                  </div>
+                  <span class="prob-value">{{ Math.round(val * 100) }}%</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1817,6 +2141,197 @@ body {
   color: #a1a1aa;
 }
 
+/* Classify View */
+.classify-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.classify-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+}
+
+.classify-card {
+  background: #111118;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.classify-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.classify-card-header h3 {
+  margin: 0;
+  color: #fafafa;
+}
+
+.loading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #a1a1aa;
+}
+
+.loading-row .mdi {
+  font-size: 1.25rem;
+  color: #8b5cf6;
+}
+
+.latest-result {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 1rem;
+  align-items: center;
+}
+
+.latest-image img {
+  width: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid #27272a;
+}
+
+.latest-meta h4 {
+  margin: 0;
+  color: #fafafa;
+}
+
+.prediction-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 999px;
+  color: #cdd5ff;
+  width: fit-content;
+}
+
+.prediction-badge.subtle {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: #27272a;
+  color: #a1a1aa;
+}
+
+.pred-label {
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.pred-confidence {
+  color: #8b5cf6;
+  font-weight: 600;
+}
+
+.prob-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.prob-item {
+  display: grid;
+  grid-template-columns: 120px 1fr 50px;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.prob-bar {
+  height: 8px;
+  background: #1f1f27;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.prob-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #6366f1);
+}
+
+.prob-value {
+  text-align: right;
+  color: #e4e4e7;
+  font-size: 0.85rem;
+}
+
+.upload-drop {
+  border: 1px dashed #3f3f46;
+  border-radius: 12px;
+  padding: 1rem;
+  color: #c7d2fe;
+  background: #0a0a10;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.upload-drop input {
+  display: none;
+}
+
+.upload-preview {
+  position: relative;
+  margin-top: 0.75rem;
+}
+
+.upload-preview img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 12px;
+  border: 1px solid #27272a;
+}
+
+.upload-preview .icon-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+}
+
+.upload-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.upload-result {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.empty-state.compact {
+  padding: 1.25rem;
+}
+
+.empty-state.compact h2 {
+  margin: 0.25rem 0;
+}
+
+@media (max-width: 900px) {
+  .latest-result {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Train View */
 .train-view {
   flex: 1;
@@ -2116,6 +2631,10 @@ body {
   border-radius: 10px;
   color: #f87171;
   margin-bottom: 1.5rem;
+}
+
+.error-message.small {
+  margin-bottom: 0.5rem;
 }
 
 .error-message .mdi {

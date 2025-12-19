@@ -31,7 +31,8 @@ func (h *DatasetHandler) handleListImages(w http.ResponseWriter, r *http.Request
 	q := r.URL.Query()
 	unlabeled := q.Get("unlabeled") == "1" || strings.EqualFold(q.Get("unlabeled"), "true")
 
-	limit := 200
+	// limit=0 (default) means "no limit"
+	limit := 0
 	if raw := q.Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil {
 			limit = n

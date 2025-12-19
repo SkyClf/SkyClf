@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,16 +32,18 @@ func NewLatestHandler(st *store.Store, imagesDir string, modelsDir string, pred 
 func (h *LatestHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/latest", h.handleLatest)
 	mux.HandleFunc("GET /api/clf", h.handleClf)
+	mux.HandleFunc("POST /api/classify", h.handleClassifyUpload)
 	mux.HandleFunc("GET /api/models/download", h.handleDownloadModel)
 	mux.HandleFunc("GET /api/models/list", h.handleListModels)
 }
+
 // handleDownloadModel serves a model file for download, optionally by version
 func (h *LatestHandler) handleDownloadModel(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("version")
 	file := r.URL.Query().Get("file") // model.onnx or model.pt
 	modelDir := filepath.Join(h.modelsDir, "skystate")
 	var modelPath string
-	
+
 	// ensure deterministic ordering
 	entries, err := os.ReadDir(modelDir)
 	if err == nil && version == "" {
@@ -211,5 +214,59 @@ func (h *LatestHandler) handleClf(w http.ResponseWriter, r *http.Request) {
 		"skystate":   pred.SkyState,
 		"confidence": pred.Confidence,
 		"probs":      pred.Probs,
+	})
+}
+
+// handleClassifyUpload runs inference against an uploaded image (test hook for the UI)
+func (h *LatestHandler) handleClassifyUpload(w http.ResponseWriter, r *http.Request) {
+	if h.pred == nil {
+		http.Error(w, "no model loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := r.ParseMultipartForm(12 << 20); err != nil { // 12MB
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	file, hdr, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file field 'file' required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	tmp, err := os.CreateTemp("", "skyclf-upload-*")
+	if err != nil {
+		http.Error(w, "failed to buffer upload", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tmp.Name())
+
+	n, err := io.Copy(tmp, file)
+	if err != nil {
+		http.Error(w, "failed to read upload", http.StatusBadRequest)
+		tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		http.Error(w, "failed to buffer upload", http.StatusInternalServerError)
+		return
+	}
+
+	pred, err := h.pred.PredictImage(r.Context(), tmp.Name())
+	if err != nil {
+		http.Error(w, "prediction failed", http.StatusInternalServerError)
+		return
+	}
+	if pred == nil {
+		http.Error(w, "no prediction", http.StatusServiceUnavailable)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"filename":   hdr.Filename,
+		"size":       n,
+		"prediction": pred,
 	})
 }
