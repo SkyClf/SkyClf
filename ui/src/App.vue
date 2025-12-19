@@ -109,6 +109,10 @@ const uploadPrediction = ref<Prediction | null>(null);
 const uploadError = ref("");
 const uploadLoading = ref(false);
 
+// Performance: avoid loading thousands of images unless requested
+const loadAllImages = ref(false);
+const imageLimit = 400;
+
 let pollInterval: number | null = null;
 
 // ============ Computed ============
@@ -172,6 +176,9 @@ const skystateOptions = [
 async function fetchImages() {
   try {
     const params = new URLSearchParams();
+    if (!loadAllImages.value) {
+      params.set("limit", String(imageLimit));
+    }
     if (showUnlabeledOnly.value) params.set("unlabeled", "1");
 
     const query = params.toString();
@@ -495,6 +502,7 @@ function resetUploadPreview() {
   uploadFile.value = null;
   uploadFileName.value = "";
   uploadPrediction.value = null;
+  uploadError.value = "";
 }
 
 function onUploadFileChange(e: Event) {
@@ -503,6 +511,7 @@ function onUploadFileChange(e: Event) {
   uploadFile.value = file;
   uploadPrediction.value = null;
   uploadError.value = "";
+  classifyError.value = "";
   resetUploadPreview();
 
   if (file) {
@@ -538,6 +547,18 @@ async function submitUploadClassification() {
     uploadPrediction.value = null;
   } finally {
     uploadLoading.value = false;
+  }
+}
+
+const classifyActionLoading = computed(
+  () => classifyLoading.value || uploadLoading.value
+);
+
+async function handleClassifyAction() {
+  if (uploadFile.value) {
+    await submitUploadClassification();
+  } else {
+    await classifyLatest();
   }
 }
 
@@ -730,6 +751,18 @@ onUnmounted(() => {
               <span class="toggle-slider"></span>
               <span class="toggle-label">Unlabeled only</span>
             </label>
+            <label class="toggle">
+              <input
+                type="checkbox"
+                v-model="loadAllImages"
+                @change="
+                  fetchImages();
+                  currentIndex = 0;
+                "
+              />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Load all (slower)</span>
+            </label>
             <button class="icon-btn" @click="fetchImages()" title="Refresh">
               <span class="mdi mdi-refresh"></span>
             </button>
@@ -911,11 +944,22 @@ onUnmounted(() => {
           <div class="toolbar-right">
             <button
               class="btn-primary ghost"
-              @click="classifyLatest"
-              :disabled="classifyLoading"
+              @click="handleClassifyAction"
+              :disabled="classifyActionLoading"
             >
-              <span class="mdi mdi-camera-iris"></span>
-              {{ classifyLoading ? "Classifying..." : "Classify now" }}
+              <span
+                class="mdi"
+                :class="uploadFile ? 'mdi-ray-start-arrow' : 'mdi-camera-iris'"
+              ></span>
+              {{
+                uploadFile
+                  ? uploadLoading
+                    ? "Classifying..."
+                    : "Classify upload"
+                  : classifyLoading
+                  ? "Classifying..."
+                  : "Classify now"
+              }}
             </button>
           </div>
         </div>
