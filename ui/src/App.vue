@@ -550,17 +550,6 @@ async function submitUploadClassification() {
   }
 }
 
-const classifyActionLoading = computed(
-  () => classifyLoading.value || uploadLoading.value
-);
-
-async function handleClassifyAction() {
-  if (uploadFile.value) {
-    await submitUploadClassification();
-  } else {
-    await classifyLatest();
-  }
-}
 
 // Update model list on mount and after training
 onMounted(() => {
@@ -944,22 +933,11 @@ onUnmounted(() => {
           <div class="toolbar-right">
             <button
               class="btn-primary ghost"
-              @click="handleClassifyAction"
-              :disabled="classifyActionLoading"
+              @click="classifyLatest"
+              :disabled="classifyLoading"
             >
-              <span
-                class="mdi"
-                :class="uploadFile ? 'mdi-ray-start-arrow' : 'mdi-camera-iris'"
-              ></span>
-              {{
-                uploadFile
-                  ? uploadLoading
-                    ? "Classifying..."
-                    : "Classify upload"
-                  : classifyLoading
-                  ? "Classifying..."
-                  : "Classify now"
-              }}
+              <span class="mdi mdi-camera-iris"></span>
+              {{ classifyLoading ? "Classifying..." : "Classify now" }}
             </button>
           </div>
         </div>
