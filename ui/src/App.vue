@@ -494,11 +494,15 @@ async function classifyLatest() {
   }
 }
 
-function resetUploadPreview() {
+function revokeUploadPreview() {
   if (uploadPreview.value) {
     URL.revokeObjectURL(uploadPreview.value);
     uploadPreview.value = null;
   }
+}
+
+function clearUpload() {
+  revokeUploadPreview();
   uploadFile.value = null;
   uploadFileName.value = "";
   uploadPrediction.value = null;
@@ -508,11 +512,11 @@ function resetUploadPreview() {
 function onUploadFileChange(e: Event) {
   const target = e.target as HTMLInputElement;
   const file = target.files?.[0] || null;
+  revokeUploadPreview();
   uploadFile.value = file;
   uploadPrediction.value = null;
   uploadError.value = "";
   classifyError.value = "";
-  resetUploadPreview();
 
   if (file) {
     uploadPreview.value = URL.createObjectURL(file);
@@ -607,7 +611,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval);
   window.removeEventListener("keydown", handleKeydown);
-  resetUploadPreview();
+  clearUpload();
 });
 </script>
 
@@ -1055,7 +1059,7 @@ onUnmounted(() => {
               <img :src="uploadPreview" :alt="uploadFileName" />
               <button
                 class="icon-btn"
-                @click="resetUploadPreview"
+                @click="clearUpload"
                 title="Clear selection"
               >
                 <span class="mdi mdi-close"></span>
