@@ -10,9 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/SkyClf/SkyClf/internal/store"
 )
 
 type OnNewImageFunc func(ev NewImageEvent)
+
+// OnCleanupFunc is called after auto-cleanup
+type OnCleanupFunc func(result store.CleanupResult)
 
 type NewImageEvent struct {
 	Filename  string
@@ -24,12 +29,15 @@ type NewImageEvent struct {
 
 // Fetcher periodically downloads images from an AllSky camera URL.
 type Fetcher struct {
-	url          string
-	imagesDir    string
-	pollInterval time.Duration
-	client       *http.Client
-	lastHash     [32]byte // Hash of last saved image to avoid duplicates
-	onNewImage   OnNewImageFunc
+	url            string
+	imagesDir      string
+	pollInterval   time.Duration
+	client         *http.Client
+	lastHash       [32]byte // Hash of last saved image to avoid duplicates
+	onNewImage     OnNewImageFunc
+	store          *store.Store
+	maxUnlabeled   int // Auto-cleanup threshold (0 = disabled)
+	onCleanup      OnCleanupFunc
 }
 
 // New creates a new Fetcher.
@@ -39,10 +47,18 @@ func New(url, imagesDir string, pollInterval time.Duration, onNewImage OnNewImag
 		imagesDir:    imagesDir,
 		pollInterval: pollInterval,
 		onNewImage:   onNewImage,
+		maxUnlabeled: 0, // disabled by default
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// SetAutoCleanup enables automatic cleanup when unlabeled count exceeds maxUnlabeled
+func (f *Fetcher) SetAutoCleanup(st *store.Store, maxUnlabeled int, onCleanup OnCleanupFunc) {
+	f.store = st
+	f.maxUnlabeled = maxUnlabeled
+	f.onCleanup = onCleanup
 }
 
 // Start begins the polling loop. It blocks until the context is canceled.
@@ -124,7 +140,37 @@ func (f *Fetcher) fetchAndSave() error {
 		})
 	}
 
+	// Auto-cleanup if enabled and store is set
+	if f.store != nil && f.maxUnlabeled > 0 {
+		f.runAutoCleanup()
+	}
+
 	return nil
+}
+
+// runAutoCleanup removes oldest unlabeled images to keep count under threshold
+func (f *Fetcher) runAutoCleanup() {
+	result, err := f.store.DeleteOldestUnlabeled(f.maxUnlabeled)
+	if err != nil {
+		log.Printf("fetcher: auto-cleanup error: %v", err)
+		return
+	}
+
+	if result.DeletedCount > 0 {
+		// Delete files from disk
+		deletedFromDisk := 0
+		for _, path := range result.DeletedPaths {
+			if removeErr := os.Remove(path); removeErr == nil {
+				deletedFromDisk++
+			}
+		}
+		log.Printf("fetcher: auto-cleanup deleted %d images (%d from disk, freed %d bytes)",
+			result.DeletedCount, deletedFromDisk, result.FreedBytes)
+
+		if f.onCleanup != nil {
+			f.onCleanup(result)
+		}
+	}
 }
 
 // LatestImage returns the path to the most recent image, or empty string if none.

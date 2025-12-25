@@ -61,6 +61,11 @@ func main() {
 		}
 	})
 
+	// Enable auto-cleanup: delete oldest unlabeled images when count exceeds 30,000
+	fetch.SetAutoCleanup(st, 30000, func(result store.CleanupResult) {
+		log.Printf("auto-cleanup completed: deleted %d images", result.DeletedCount)
+	})
+
 	go func() {
 		if err := fetch.Start(ctx); err != nil && err != context.Canceled {
 			log.Printf("fetcher error: %v", err)

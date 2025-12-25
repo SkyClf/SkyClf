@@ -120,6 +120,11 @@ const uploadPrediction = ref<Prediction | null>(null);
 const uploadError = ref("");
 const uploadLoading = ref(false);
 
+// Cleanup state
+const cleanupLoading = ref(false);
+const cleanupMessage = ref("");
+const cleanupSelectedDay = ref<string | null>(null);
+
 // Performance: avoid loading thousands of images unless requested
 const loadAllImages = ref(false);
 const imageLimit = 400;
@@ -388,6 +393,36 @@ async function clearAllLabels() {
     clearMessage.value = "Network error";
   } finally {
     clearingLabels.value = false;
+  }
+}
+
+// Cleanup unlabeled images by day
+async function cleanupUnlabeledByDay(day: string) {
+  if (cleanupLoading.value) return;
+  const confirmDelete = window.confirm(
+    `Delete ALL unlabeled images from ${day}? This cannot be undone.`
+  );
+  if (!confirmDelete) return;
+
+  cleanupLoading.value = true;
+  cleanupMessage.value = "";
+  try {
+    const res = await fetch(`/api/images/cleanup?day=${day}`, {
+      method: "POST",
+    });
+    const data = res.ok ? await res.json() : null;
+    if (!res.ok) {
+      cleanupMessage.value = data?.error || "Cleanup failed";
+    } else {
+      cleanupMessage.value = `Deleted ${
+        data?.deleted_count || 0
+      } images (freed ${formatBytes(data?.freed_bytes)})`;
+      await Promise.all([fetchStats(), refreshImages()]);
+    }
+  } catch (e) {
+    cleanupMessage.value = "Network error";
+  } finally {
+    cleanupLoading.value = false;
   }
 }
 
@@ -1546,6 +1581,80 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+
+          <!-- Cleanup Section -->
+          <div class="cleanup-section">
+            <div class="cleanup-card">
+              <div class="cleanup-header">
+                <h3>
+                  <span class="mdi mdi-broom"></span>
+                  Cleanup Unlabeled Images
+                </h3>
+                <p class="muted">
+                  Delete unlabeled images to free up disk space. Auto-cleanup
+                  runs when unlabeled count exceeds 30,000.
+                </p>
+              </div>
+
+              <div class="cleanup-stats">
+                <div class="cleanup-stat">
+                  <span class="stat-value">{{ unlabeledCount }}</span>
+                  <span class="stat-label">Unlabeled</span>
+                </div>
+                <div class="cleanup-stat">
+                  <span class="stat-value">{{
+                    formatBytes(totalStorageBytes)
+                  }}</span>
+                  <span class="stat-label">Total Storage</span>
+                </div>
+              </div>
+
+              <div class="cleanup-by-day">
+                <h4>Delete Unlabeled by Day</h4>
+                <div class="cleanup-day-selector">
+                  <select v-model="cleanupSelectedDay" class="cleanup-select">
+                    <option :value="null">Select a day...</option>
+                    <option
+                      v-for="day in availableDays"
+                      :key="day.date"
+                      :value="day.date"
+                    >
+                      {{ day.date }} — {{ day.count }} images ({{
+                        formatBytes(day.size_bytes)
+                      }})
+                    </option>
+                  </select>
+                  <button
+                    class="btn-danger"
+                    :disabled="!cleanupSelectedDay || cleanupLoading"
+                    @click="
+                      cleanupSelectedDay &&
+                        cleanupUnlabeledByDay(cleanupSelectedDay)
+                    "
+                  >
+                    <span class="mdi mdi-delete"></span>
+                    {{ cleanupLoading ? "Deleting..." : "Delete Unlabeled" }}
+                  </button>
+                </div>
+                <p
+                  v-if="cleanupMessage"
+                  class="cleanup-message"
+                  :class="{ success: cleanupMessage.includes('Deleted') }"
+                >
+                  {{ cleanupMessage }}
+                </p>
+              </div>
+
+              <div class="cleanup-note">
+                <span class="mdi mdi-information"></span>
+                <span
+                  >Only <em>unlabeled</em> images are deleted. Labeled images
+                  are preserved.</span
+                >
+              </div>
+            </div>
+          </div>
+
           <div class="info-note">
             <span class="mdi mdi-database"></span>
             Labeled images stay in <code>/data/images</code> and labels in
@@ -3147,6 +3256,123 @@ body {
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
   color: #e4e4e7;
+}
+
+/* Cleanup Section */
+.cleanup-section {
+  margin-bottom: 1.5rem;
+}
+
+.cleanup-card {
+  background: #0f0f15;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cleanup-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.05rem;
+  color: #fafafa;
+}
+
+.cleanup-header .muted {
+  color: #71717a;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.cleanup-stats {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem;
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 10px;
+}
+
+.cleanup-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cleanup-stat .stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #c7d2fe;
+}
+
+.cleanup-stat .stat-label {
+  font-size: 0.8rem;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cleanup-by-day {
+  padding-top: 0.5rem;
+}
+
+.cleanup-by-day h4 {
+  font-size: 0.95rem;
+  color: #a1a1aa;
+  margin-bottom: 0.75rem;
+}
+
+.cleanup-day-selector {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cleanup-select {
+  flex: 1;
+  min-width: 200px;
+  max-width: 400px;
+  background: #111827;
+  color: #fff;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+}
+
+.cleanup-message {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: rgba(220, 38, 38, 0.1);
+  color: #f87171;
+}
+
+.cleanup-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: #4ade80;
+}
+
+.cleanup-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #71717a;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.cleanup-note em {
+  color: #fbbf24;
+  font-style: normal;
+  font-weight: 500;
 }
 
 /* Scrollbar */

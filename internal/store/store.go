@@ -355,3 +355,175 @@ ORDER BY day DESC`)
 	}
 	return out, nil
 }
+
+// CleanupResult holds the result of a cleanup operation
+type CleanupResult struct {
+	DeletedCount int      `json:"deleted_count"`
+	DeletedPaths []string `json:"deleted_paths"`
+	FreedBytes   int64    `json:"freed_bytes"`
+}
+
+// GetOldestUnlabeledImages returns the oldest unlabeled images (by fetched_at)
+func (s *Store) GetOldestUnlabeledImages(limit int) ([]ImageWithLabel, error) {
+	q := `
+SELECT i.id, i.path, i.sha256, i.fetched_at, i.size_bytes,
+       NULL as skystate, NULL as meteor, NULL as labeled_at
+FROM images i
+LEFT JOIN labels l ON l.image_id = i.id
+WHERE l.image_id IS NULL
+ORDER BY i.fetched_at ASC
+LIMIT ?`
+
+	rows, err := s.DB.Query(q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get oldest unlabeled: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ImageWithLabel
+	for rows.Next() {
+		var (
+			id, path, sha256, fetchedAtStr string
+			sizeBytes                      int64
+			skystateNS                     sql.NullString
+			meteorNI                       sql.NullInt64
+			labeledAtNS                    sql.NullString
+		)
+		if err := rows.Scan(&id, &path, &sha256, &fetchedAtStr, &sizeBytes, &skystateNS, &meteorNI, &labeledAtNS); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		fetchedAt, _ := time.Parse(time.RFC3339, fetchedAtStr)
+		out = append(out, ImageWithLabel{
+			ID:        id,
+			Path:      path,
+			SHA256:    sha256,
+			FetchedAt: fetchedAt,
+			SizeBytes: sizeBytes,
+		})
+	}
+	return out, rows.Err()
+}
+
+// DeleteImage removes an image from the database (labels are cascade deleted)
+func (s *Store) DeleteImage(id string) error {
+	_, err := s.DB.Exec(`DELETE FROM images WHERE id = ?`, id)
+	return err
+}
+
+// CountUnlabeled returns the number of unlabeled images
+func (s *Store) CountUnlabeled() (int, error) {
+	var n int
+	err := s.DB.QueryRow(`
+SELECT COUNT(*)
+FROM images i
+LEFT JOIN labels l ON l.image_id = i.id
+WHERE l.image_id IS NULL`).Scan(&n)
+	return n, err
+}
+
+// CountUnlabeledByDay returns unlabeled image count for a specific day
+func (s *Store) CountUnlabeledByDay(day string) (int, error) {
+	var n int
+	err := s.DB.QueryRow(`
+SELECT COUNT(*)
+FROM images i
+LEFT JOIN labels l ON l.image_id = i.id
+WHERE l.image_id IS NULL AND DATE(i.fetched_at) = ?`, day).Scan(&n)
+	return n, err
+}
+
+// GetUnlabeledByDay returns all unlabeled images for a specific day
+func (s *Store) GetUnlabeledByDay(day string) ([]ImageWithLabel, error) {
+	q := `
+SELECT i.id, i.path, i.sha256, i.fetched_at, i.size_bytes,
+       NULL as skystate, NULL as meteor, NULL as labeled_at
+FROM images i
+LEFT JOIN labels l ON l.image_id = i.id
+WHERE l.image_id IS NULL AND DATE(i.fetched_at) = ?
+ORDER BY i.fetched_at ASC`
+
+	rows, err := s.DB.Query(q, day)
+	if err != nil {
+		return nil, fmt.Errorf("get unlabeled by day: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ImageWithLabel
+	for rows.Next() {
+		var (
+			id, path, sha256, fetchedAtStr string
+			sizeBytes                      int64
+			skystateNS                     sql.NullString
+			meteorNI                       sql.NullInt64
+			labeledAtNS                    sql.NullString
+		)
+		if err := rows.Scan(&id, &path, &sha256, &fetchedAtStr, &sizeBytes, &skystateNS, &meteorNI, &labeledAtNS); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		fetchedAt, _ := time.Parse(time.RFC3339, fetchedAtStr)
+		out = append(out, ImageWithLabel{
+			ID:        id,
+			Path:      path,
+			SHA256:    sha256,
+			FetchedAt: fetchedAt,
+			SizeBytes: sizeBytes,
+		})
+	}
+	return out, rows.Err()
+}
+
+// DeleteUnlabeledByDay deletes all unlabeled images for a specific day and returns cleanup result
+func (s *Store) DeleteUnlabeledByDay(day string) (CleanupResult, error) {
+	images, err := s.GetUnlabeledByDay(day)
+	if err != nil {
+		return CleanupResult{}, err
+	}
+
+	result := CleanupResult{
+		DeletedPaths: make([]string, 0, len(images)),
+	}
+
+	for _, img := range images {
+		if err := s.DeleteImage(img.ID); err != nil {
+			return result, fmt.Errorf("delete image %s: %w", img.ID, err)
+		}
+		result.DeletedCount++
+		result.DeletedPaths = append(result.DeletedPaths, img.Path)
+		result.FreedBytes += img.SizeBytes
+	}
+
+	return result, nil
+}
+
+// DeleteOldestUnlabeled deletes the oldest N unlabeled images to keep count under maxUnlabeled
+func (s *Store) DeleteOldestUnlabeled(maxUnlabeled int) (CleanupResult, error) {
+	count, err := s.CountUnlabeled()
+	if err != nil {
+		return CleanupResult{}, err
+	}
+
+	if count <= maxUnlabeled {
+		return CleanupResult{}, nil
+	}
+
+	toDelete := count - maxUnlabeled
+	images, err := s.GetOldestUnlabeledImages(toDelete)
+	if err != nil {
+		return CleanupResult{}, err
+	}
+
+	result := CleanupResult{
+		DeletedPaths: make([]string, 0, len(images)),
+	}
+
+	for _, img := range images {
+		if err := s.DeleteImage(img.ID); err != nil {
+			return result, fmt.Errorf("delete image %s: %w", img.ID, err)
+		}
+		result.DeletedCount++
+		result.DeletedPaths = append(result.DeletedPaths, img.Path)
+		result.FreedBytes += img.SizeBytes
+	}
+
+	return result, nil
+}

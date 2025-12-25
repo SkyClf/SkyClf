@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ func (h *DatasetHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/dataset/days", h.handleListDays)
 	mux.HandleFunc("POST /api/labels", h.handleSetLabel)
 	mux.HandleFunc("POST /api/labels/reset", h.handleClearLabels)
+	mux.HandleFunc("POST /api/images/cleanup", h.handleCleanupImages)
 }
 
 func (h *DatasetHandler) handleListImages(w http.ResponseWriter, r *http.Request) {
@@ -134,4 +136,55 @@ func (h *DatasetHandler) handleClearLabels(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "all labels removed"})
+}
+
+// handleCleanupImages handles cleanup of unlabeled images
+// Query params:
+//   - day: Delete all unlabeled images from this specific day (YYYY-MM-DD)
+//   - max_unlabeled: Delete oldest unlabeled to keep count under this threshold (default: no auto-cleanup)
+//
+// Files are also deleted from disk.
+func (h *DatasetHandler) handleCleanupImages(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	day := q.Get("day")
+	maxUnlabeledStr := q.Get("max_unlabeled")
+
+	var result store.CleanupResult
+	var err error
+
+	if day != "" {
+		// Delete all unlabeled from a specific day
+		result, err = h.st.DeleteUnlabeledByDay(day)
+	} else if maxUnlabeledStr != "" {
+		// Delete oldest unlabeled to keep count under threshold
+		maxUnlabeled, parseErr := strconv.Atoi(maxUnlabeledStr)
+		if parseErr != nil || maxUnlabeled < 0 {
+			http.Error(w, "invalid max_unlabeled value", http.StatusBadRequest)
+			return
+		}
+		result, err = h.st.DeleteOldestUnlabeled(maxUnlabeled)
+	} else {
+		http.Error(w, "must specify 'day' or 'max_unlabeled' parameter", http.StatusBadRequest)
+		return
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Also delete files from disk
+	deletedFromDisk := 0
+	for _, path := range result.DeletedPaths {
+		if removeErr := os.Remove(path); removeErr == nil {
+			deletedFromDisk++
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":               true,
+		"deleted_count":    result.DeletedCount,
+		"deleted_from_disk": deletedFromDisk,
+		"freed_bytes":      result.FreedBytes,
+	})
 }
