@@ -126,7 +126,11 @@ function navigate(name: string) {
 }
 
 .nav-btn.active {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.15),
+    rgba(139, 92, 246, 0.1)
+  );
   color: #c7d2fe;
   border: 1px solid rgba(99, 102, 241, 0.3);
 }

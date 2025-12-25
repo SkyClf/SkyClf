@@ -129,7 +129,10 @@ onMounted(() => {
             :disabled="loading || !store.modelInfo.value.active"
             @click="classify"
           >
-            <span class="mdi" :class="loading ? 'mdi-loading mdi-spin' : 'mdi-brain'"></span>
+            <span
+              class="mdi"
+              :class="loading ? 'mdi-loading mdi-spin' : 'mdi-brain'"
+            ></span>
             {{ loading ? "Classifying..." : "Classify" }}
           </button>
         </div>
@@ -148,7 +151,9 @@ onMounted(() => {
           >
             <span :class="['mdi', skystateIcons[prediction.skystate]]"></span>
             <div>
-              <span class="sky-label">{{ prediction.skystate.replace("_", " ") }}</span>
+              <span class="sky-label">{{
+                prediction.skystate.replace("_", " ")
+              }}</span>
               <span v-if="prediction.confidence" class="confidence">
                 {{ (prediction.confidence * 100).toFixed(1) }}% confidence
               </span>
@@ -162,7 +167,9 @@ onMounted(() => {
               :key="key"
               class="prob-row"
             >
-              <span class="prob-label">{{ String(key).replace("_", " ") }}</span>
+              <span class="prob-label">{{
+                String(key).replace("_", " ")
+              }}</span>
               <div class="prob-bar">
                 <div
                   class="prob-fill"
@@ -423,7 +430,9 @@ onMounted(() => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mdi-spin {

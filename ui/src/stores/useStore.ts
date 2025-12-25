@@ -81,11 +81,13 @@ const progress = computed(() => {
 });
 
 // ============ API Functions ============
-async function fetchImages(options: {
-  unlabeled?: boolean;
-  day?: string | null;
-  limit?: number;
-} = {}) {
+async function fetchImages(
+  options: {
+    unlabeled?: boolean;
+    day?: string | null;
+    limit?: number;
+  } = {}
+) {
   const params = new URLSearchParams();
   if (options.unlabeled) params.set("unlabeled", "1");
   if (options.day) params.set("date", options.day);
@@ -181,9 +183,12 @@ async function fetchModelVersions() {
 }
 
 async function switchModel(version: string) {
-  const res = await fetch(`/api/models/reload?version=${encodeURIComponent(version)}`, {
-    method: "POST",
-  });
+  const res = await fetch(
+    `/api/models/reload?version=${encodeURIComponent(version)}`,
+    {
+      method: "POST",
+    }
+  );
   if (res.ok) {
     await fetchModelInfo();
   }

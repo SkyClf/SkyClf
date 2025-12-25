@@ -123,7 +123,9 @@ function formatTime(dateStr: string): string {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mdi-spin {

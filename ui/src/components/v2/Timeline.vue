@@ -20,7 +20,11 @@ watch(
     await nextTick();
     const el = container.value?.querySelector(".thumb.active") as HTMLElement;
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      el.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
     }
   }
 );
@@ -31,16 +35,17 @@ watch(
     <button
       v-for="(img, idx) in images"
       :key="img.id"
-      :class="['thumb', { active: idx === currentIndex, labeled: !!img.skystate }]"
+      :class="[
+        'thumb',
+        { active: idx === currentIndex, labeled: !!img.skystate },
+      ]"
       @click="emit('select', idx)"
     >
       <img :src="`/api/images/${img.id}`" :alt="img.id" loading="lazy" />
       <span v-if="img.skystate" class="dot" :data-state="img.skystate"></span>
     </button>
 
-    <div v-if="images.length === 0" class="empty">
-      No images
-    </div>
+    <div v-if="images.length === 0" class="empty">No images</div>
   </div>
 </template>
 

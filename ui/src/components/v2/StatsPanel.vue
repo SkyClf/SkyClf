@@ -29,7 +29,9 @@ const skystates = [
         <span class="stat-label">Unlabeled</span>
       </div>
       <div class="stat">
-        <span class="stat-value">{{ formatBytes(stats.total_size_bytes) }}</span>
+        <span class="stat-value">{{
+          formatBytes(stats.total_size_bytes)
+        }}</span>
         <span class="stat-label">Storage</span>
       </div>
     </div>
@@ -38,13 +40,22 @@ const skystates = [
     <div class="progress-section">
       <div class="progress-header">
         <span>Progress</span>
-        <span>{{ stats.total > 0 ? Math.round((stats.labeled / stats.total) * 100) : 0 }}%</span>
+        <span
+          >{{
+            stats.total > 0
+              ? Math.round((stats.labeled / stats.total) * 100)
+              : 0
+          }}%</span
+        >
       </div>
       <div class="progress-bar">
         <div
           class="progress-fill"
           :style="{
-            width: stats.total > 0 ? `${(stats.labeled / stats.total) * 100}%` : '0%',
+            width:
+              stats.total > 0
+                ? `${(stats.labeled / stats.total) * 100}%`
+                : '0%',
           }"
         ></div>
       </div>
@@ -54,11 +65,7 @@ const skystates = [
     <div class="class-breakdown">
       <h4>By Class</h4>
       <div class="class-list">
-        <div
-          v-for="s in skystates"
-          :key="s.key"
-          class="class-item"
-        >
+        <div v-for="s in skystates" :key="s.key" class="class-item">
           <span class="class-dot" :style="{ background: s.color }"></span>
           <span class="class-label">{{ s.label }}</span>
           <span class="class-count">{{ stats.by_class[s.key] || 0 }}</span>

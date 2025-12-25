@@ -10,11 +10,41 @@ const showUnlabeledOnly = ref(true);
 const labeling = ref(false);
 
 const skystates = [
-  { value: "clear", label: "Clear", icon: "mdi-weather-sunny", color: "#fbbf24", key: "1" },
-  { value: "light_clouds", label: "Light", icon: "mdi-weather-partly-cloudy", color: "#60a5fa", key: "2" },
-  { value: "heavy_clouds", label: "Heavy", icon: "mdi-weather-cloudy", color: "#6b7280", key: "3" },
-  { value: "precipitation", label: "Rain", icon: "mdi-weather-rainy", color: "#3b82f6", key: "4" },
-  { value: "unknown", label: "Unknown", icon: "mdi-help-circle", color: "#8b5cf6", key: "5" },
+  {
+    value: "clear",
+    label: "Clear",
+    icon: "mdi-weather-sunny",
+    color: "#fbbf24",
+    key: "1",
+  },
+  {
+    value: "light_clouds",
+    label: "Light",
+    icon: "mdi-weather-partly-cloudy",
+    color: "#60a5fa",
+    key: "2",
+  },
+  {
+    value: "heavy_clouds",
+    label: "Heavy",
+    icon: "mdi-weather-cloudy",
+    color: "#6b7280",
+    key: "3",
+  },
+  {
+    value: "precipitation",
+    label: "Rain",
+    icon: "mdi-weather-rainy",
+    color: "#3b82f6",
+    key: "4",
+  },
+  {
+    value: "unknown",
+    label: "Unknown",
+    icon: "mdi-help-circle",
+    color: "#8b5cf6",
+    key: "5",
+  },
 ];
 
 const currentDaySummary = computed(() => {
@@ -112,10 +142,7 @@ onUnmounted(() => {
       </div>
 
       <div class="header-controls">
-        <select
-          v-model="store.selectedDay.value"
-          class="day-select"
-        >
+        <select v-model="store.selectedDay.value" class="day-select">
           <option :value="null">All days</option>
           <option
             v-for="day in store.days.value"

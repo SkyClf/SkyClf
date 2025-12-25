@@ -87,15 +87,24 @@ onUnmounted(() => {
       <div class="status-card">
         <span class="mdi mdi-cube-outline"></span>
         <div>
-          <span class="status-value">{{ store.modelInfo.value.active || "None" }}</span>
+          <span class="status-value">{{
+            store.modelInfo.value.active || "None"
+          }}</span>
           <span class="status-label">Active Model</span>
         </div>
       </div>
 
-      <div class="status-card" :class="{ running: store.trainStatus.value.running }">
+      <div
+        class="status-card"
+        :class="{ running: store.trainStatus.value.running }"
+      >
         <span
           class="mdi"
-          :class="store.trainStatus.value.running ? 'mdi-loading mdi-spin' : 'mdi-check-circle'"
+          :class="
+            store.trainStatus.value.running
+              ? 'mdi-loading mdi-spin'
+              : 'mdi-check-circle'
+          "
         ></span>
         <div>
           <span class="status-value">
@@ -111,7 +120,10 @@ onUnmounted(() => {
       <span class="mdi mdi-alert"></span>
       <div>
         <strong>Not enough data</strong>
-        <p>You need at least 10 labeled images. Currently: {{ store.stats.value.labeled }}</p>
+        <p>
+          You need at least 10 labeled images. Currently:
+          {{ store.stats.value.labeled }}
+        </p>
       </div>
     </div>
 
@@ -136,10 +148,21 @@ onUnmounted(() => {
       <label class="scratch-option">
         <input type="checkbox" v-model="fromScratch" />
         <div class="scratch-content">
-          <span class="mdi" :class="fromScratch ? 'mdi-restart' : 'mdi-school'"></span>
+          <span
+            class="mdi"
+            :class="fromScratch ? 'mdi-restart' : 'mdi-school'"
+          ></span>
           <div>
-            <strong>{{ fromScratch ? "Train from scratch" : "Continue learning" }}</strong>
-            <p>{{ fromScratch ? "Reset weights and start fresh" : "Fine-tune existing model" }}</p>
+            <strong>{{
+              fromScratch ? "Train from scratch" : "Continue learning"
+            }}</strong>
+            <p>
+              {{
+                fromScratch
+                  ? "Reset weights and start fresh"
+                  : "Fine-tune existing model"
+              }}
+            </p>
           </div>
         </div>
       </label>
@@ -563,7 +586,9 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mdi-spin {
