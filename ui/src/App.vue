@@ -212,7 +212,10 @@ function formatBytes(bytes?: number | null) {
 async function fetchImages() {
   try {
     const params = new URLSearchParams();
-    if (!loadAllImages.value) {
+    // When a specific day is selected, load all images for that day (typically 1000-2000 max)
+    // Only apply limit when showing "all days" to keep it performant
+    const shouldLimit = !loadAllImages.value && !selectedDay.value;
+    if (shouldLimit) {
       params.set("limit", String(imageLimit));
     }
     if (showUnlabeledOnly.value) params.set("unlabeled", "1");
