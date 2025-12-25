@@ -139,11 +139,12 @@ const progress = computed(() => {
 });
 
 const selectedDaySummary = computed(
-  () =>
-    availableDays.value.find((d) => d.date === selectedDay.value) || null
+  () => availableDays.value.find((d) => d.date === selectedDay.value) || null
 );
 
-const selectedDaySize = computed(() => selectedDaySummary.value?.size_bytes ?? null);
+const selectedDaySize = computed(
+  () => selectedDaySummary.value?.size_bytes ?? null
+);
 
 const classBreakdown = computed(() =>
   skystateOptions.map((opt) => ({
@@ -213,16 +214,15 @@ async function fetchImages() {
     if (selectedDay.value) params.set("date", selectedDay.value);
 
     const query = params.toString();
-    const res = await fetch(
-      `/api/dataset/images${query ? `?${query}` : ""}`
-    );
+    const res = await fetch(`/api/dataset/images${query ? `?${query}` : ""}`);
     if (res.ok) {
       const data = await res.json();
       images.value = data.items || [];
       totalCount.value = data.count || 0;
       // Keep index valid so the main image and timeline don't disappear after refreshes
       if (currentIndex.value >= images.value.length) {
-        currentIndex.value = images.value.length > 0 ? images.value.length - 1 : 0;
+        currentIndex.value =
+          images.value.length > 0 ? images.value.length - 1 : 0;
       }
     }
   } catch (e) {
@@ -240,10 +240,14 @@ async function fetchAvailableDays() {
       const hasSelection =
         !!selectedDay.value && days.some((d) => d.date === selectedDay.value);
 
-      if (selectedDay.value && !hasSelection && days.length) {
-        selectedDay.value = days[0].date;
-      } else if (!selectedDay.value && !dayManuallyChosen.value && days.length) {
-        selectedDay.value = days[0].date;
+      if (selectedDay.value && !hasSelection && days.length > 0) {
+        selectedDay.value = days[0]!.date;
+      } else if (
+        !selectedDay.value &&
+        !dayManuallyChosen.value &&
+        days.length > 0
+      ) {
+        selectedDay.value = days[0]!.date;
       }
     }
   } catch (e) {
@@ -281,7 +285,10 @@ async function fetchStats() {
         const data = await alt.json();
         const items = data.items || [];
         labeledCount.value = items.filter((i: ImageItem) => i.skystate).length;
-        unlabeledCount.value = Math.max((data.count || 0) - labeledCount.value, 0);
+        unlabeledCount.value = Math.max(
+          (data.count || 0) - labeledCount.value,
+          0
+        );
         labeledByClass.value = {};
         totalStorageBytes.value = 0;
       }
@@ -366,7 +373,9 @@ async function clearAllLabels() {
   clearingLabels.value = true;
   clearMessage.value = "";
   try {
-    const res = await fetch("/api/labels/reset?confirm=yes", { method: "POST" });
+    const res = await fetch("/api/labels/reset?confirm=yes", {
+      method: "POST",
+    });
     const data = res.ok ? await res.json() : null;
     if (!res.ok) {
       clearMessage.value = data?.error || "Failed to remove labels";
@@ -522,7 +531,9 @@ const selectedVersion = computed(() => {
   );
 });
 
-const selectedFormats = computed(() => pickFormatsForVersion(selectedModelVersion.value));
+const selectedFormats = computed(() =>
+  pickFormatsForVersion(selectedModelVersion.value)
+);
 
 async function useSelectedModel() {
   if (!selectedModelVersion.value) return;
@@ -621,7 +632,6 @@ async function submitUploadClassification() {
   }
 }
 
-
 // Update model list on mount and after training
 onMounted(() => {
   fetchModelVersions();
@@ -655,7 +665,11 @@ watch(status, (newVal) => {
 });
 
 watch(activeTab, (tab) => {
-  if (tab === "classify" && !latestClassification.value && !classifyLoading.value) {
+  if (
+    tab === "classify" &&
+    !latestClassification.value &&
+    !classifyLoading.value
+  ) {
     classifyLatest();
   }
 });
@@ -797,7 +811,9 @@ onUnmounted(() => {
                 <span class="mdi mdi-alert"></span>
                 {{ clearingLabels ? "Clearing..." : "Remove all labels" }}
               </button>
-              <span class="danger-hint">Clears every label; images are kept.</span>
+              <span class="danger-hint"
+                >Clears every label; images are kept.</span
+              >
             </div>
             <div class="day-filter">
               <label class="day-filter-label" for="day-select">
@@ -1158,7 +1174,11 @@ onUnmounted(() => {
             </div>
 
             <label class="upload-drop">
-              <input type="file" accept="image/*" @change="onUploadFileChange" />
+              <input
+                type="file"
+                accept="image/*"
+                @change="onUploadFileChange"
+              />
               <div>
                 <span class="mdi mdi-upload"></span>
                 <span>{{ uploadFileName || "Choose an image" }}</span>
@@ -1418,10 +1438,8 @@ onUnmounted(() => {
                 <div>
                   <h3>Models & API</h3>
                   <p class="muted">
-                    Switch or download a version. <a
-                      href="/api/clf"
-                      class="api-link"
-                      target="_blank"
+                    Switch or download a version.
+                    <a href="/api/clf" class="api-link" target="_blank"
                       >/api/clf</a
                     >
                     returns the latest prediction JSON.
@@ -1464,7 +1482,7 @@ onUnmounted(() => {
                     download
                   >
                     <span class="mdi mdi-download"></span>
-                    Download {{ fmt === 'model.onnx' ? 'ONNX' : 'PyTorch' }}
+                    Download {{ fmt === "model.onnx" ? "ONNX" : "PyTorch" }}
                   </a>
                   <button
                     class="btn-primary ghost"
@@ -1487,9 +1505,9 @@ onUnmounted(() => {
                     <div class="model-version-row">
                       <div>
                         <span class="model-version">{{ m.version }}</span>
-                        <span v-if="m.created_at" class="model-created"
-                          >{{ new Date(m.created_at).toLocaleString() }}</span
-                        >
+                        <span v-if="m.created_at" class="model-created">{{
+                          new Date(m.created_at).toLocaleString()
+                        }}</span>
                       </div>
                       <div class="model-links">
                         <a
